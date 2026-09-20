@@ -1,6 +1,7 @@
 export type ErrorCode =
   | 'NOT_FOUND'
   | 'FORBIDDEN'
+  | 'CSRF_REJECTED'
   | 'UNAUTHORIZED'
   | 'VALIDATION_ERROR'
   | 'CONFLICT'
@@ -30,10 +31,27 @@ export class NotFoundError extends AppError {
   }
 }
 
-/** For a member inside a workspace acting beyond their role. Never for outsiders. */
+/**
+ * For a member inside a workspace acting beyond their role. Never for
+ * outsiders, and never for a rejected cross-site request: FORBIDDEN means
+ * "you are who you say you are, and the answer is still no".
+ */
 export class ForbiddenError extends AppError {
   constructor(message = 'Forbidden') {
     super(403, 'FORBIDDEN', message);
+  }
+}
+
+/**
+ * A mutating request that failed the Fetch Metadata check. Shares the 403
+ * status with ForbiddenError but carries its own code, because the two mean
+ * completely different things: this one says "resend this request properly",
+ * FORBIDDEN says "your role does not permit this". A caller debugging by
+ * status alone would otherwise conflate a CSRF rejection with a role denial.
+ */
+export class CsrfError extends AppError {
+  constructor(message = 'Cross-site request blocked') {
+    super(403, 'CSRF_REJECTED', message);
   }
 }
 

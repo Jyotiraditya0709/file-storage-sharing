@@ -618,3 +618,31 @@ describe('server-computed capabilities drive what the UI renders (SPEC §7)', ()
     expect(ownerView.body.links[0].canRevoke).toBe(true);
   });
 });
+
+describe('403 codes are not interchangeable', () => {
+  it('a role denial is FORBIDDEN while a cross-site request is CSRF_REJECTED', async () => {
+    const owner = await signUp('Code Owner');
+    const viewer = await signUp('Code Viewer');
+    const wid = await createWorkspace(owner, 'Codes');
+    await addMember(owner, wid, viewer, 'viewer');
+
+    // Same endpoint, same caller, two different reasons to refuse.
+    const roleDenial = await viewer.agent
+      .post(`/api/workspaces/${wid}/documents`)
+      .set(SAME_ORIGIN)
+      .attach('file', Buffer.from('nope'), { filename: 'nope.txt' });
+
+    const csrfDenial = await viewer.agent
+      .post(`/api/workspaces/${wid}/documents`)
+      .set('Sec-Fetch-Site', 'cross-site')
+      .attach('file', Buffer.from('nope'), { filename: 'nope.txt' });
+
+    expect(roleDenial.status).toBe(403);
+    expect(roleDenial.body.error.code).toBe('FORBIDDEN');
+
+    expect(csrfDenial.status).toBe(403);
+    expect(csrfDenial.body.error.code).toBe('CSRF_REJECTED');
+
+    expect(roleDenial.body.error.code).not.toBe(csrfDenial.body.error.code);
+  });
+});

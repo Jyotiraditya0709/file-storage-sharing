@@ -129,14 +129,19 @@ describe('CSRF (Sec-Fetch-Site)', () => {
     }
   });
 
-  it('blocks cross-site and same-site', async () => {
+  it('blocks cross-site and same-site with CSRF_REJECTED, not FORBIDDEN', async () => {
     for (const site of ['cross-site', 'same-site']) {
       const res = await request(app)
         .post('/api/auth/login')
         .set('Sec-Fetch-Site', site)
         .send(credentials);
       expect(res.status).toBe(403);
-      expect(res.body.error.code).toBe('FORBIDDEN');
+      // A rejected cross-site request and a role denial share the 403 but not
+      // the code: SPEC §2 reserves FORBIDDEN for "a member acting beyond their
+      // role", and conflating the two sends a caller hunting a permissions bug
+      // when the real fix is to resend the request properly.
+      expect(res.body.error.code).toBe('CSRF_REJECTED');
+      expect(res.body.error.code).not.toBe('FORBIDDEN');
     }
   });
 

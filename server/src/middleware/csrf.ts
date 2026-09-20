@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { ForbiddenError } from '../lib/errors.js';
+import { CsrfError } from '../lib/errors.js';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -11,6 +11,11 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * is a non-browser client such as curl and cannot be a CSRF vector. Anything
  * else — `cross-site`, `same-site`, or an Origin without Sec-Fetch-Site — is
  * refused. Every browser capable of mounting the attack sends one of them.
+ *
+ * The rejection is 403 CSRF_REJECTED, not 403 FORBIDDEN. SPEC §2 reserves
+ * FORBIDDEN for "a member acting beyond their role", which is a statement
+ * about authorization; this is a statement about how the request arrived, and
+ * the fix is to resend it, not to be granted a higher role.
  */
 export function csrf(req: Request, _res: Response, next: NextFunction): void {
   if (!MUTATING.has(req.method)) {
@@ -29,5 +34,5 @@ export function csrf(req: Request, _res: Response, next: NextFunction): void {
     return;
   }
 
-  throw new ForbiddenError('Cross-site request blocked');
+  throw new CsrfError();
 }
