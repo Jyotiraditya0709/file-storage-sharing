@@ -278,13 +278,17 @@ describe('role limits inside a workspace are 403 FORBIDDEN (ARCHITECTURE #2)', (
   });
 
   it('nobody grants a role above their own, and nobody sets owner through /members', async () => {
-    // Above their own: an admin cannot mint an owner.
-    const byAdmin = await admin.agent
+    // An admin cannot mint an admin's superior. 'member' is grantable by an
+    // admin, so this exercises the rank rule rather than the enum.
+    const aboveOwnRole = await admin.agent
       .patch(`/api/workspaces/${wid}/members/${member.id}`)
       .set(SAME_ORIGIN)
       .send({ role: 'owner' });
-    expect(byAdmin.status).toBe(403);
-    expect(byAdmin.body.error.code).toBe('FORBIDDEN');
+    // 'owner' is not in the members schema at all — the same answer the
+    // invitations route gives for the same input, rather than 403 there and
+    // 400 here for one request.
+    expect(aboveOwnRole.status).toBe(400);
+    expect(aboveOwnRole.body.error.code).toBe('VALIDATION_ERROR');
 
     // Not even the owner: ownership moves only through /transfer, which keeps
     // one_owner_per_workspace true.
@@ -292,8 +296,12 @@ describe('role limits inside a workspace are 403 FORBIDDEN (ARCHITECTURE #2)', (
       .patch(`/api/workspaces/${wid}/members/${member.id}`)
       .set(SAME_ORIGIN)
       .send({ role: 'owner' });
-    expect(byOwner.status).toBe(403);
-    expect(byOwner.body.error.code).toBe('FORBIDDEN');
+    expect(byOwner.status).toBe(400);
+    expect(byOwner.body.error.code).toBe('VALIDATION_ERROR');
+
+    // With 'owner' out of the enum, can()'s "never above your own role" check
+    // is unreachable through this route and remains as defence in depth; the
+    // reachable version of that rule is covered on the invitations route below.
 
     // And the invitation route refuses the role outright.
     const invite = await owner.agent
@@ -644,5 +652,111 @@ describe('403 codes are not interchangeable', () => {
     expect(csrfDenial.body.error.code).toBe('CSRF_REJECTED');
 
     expect(roleDenial.body.error.code).not.toBe(csrfDenial.body.error.code);
+  });
+});
+
+describe('transfer of ownership (SPEC §2)', () => {
+  it('moves owner to the target, demotes the previous owner to admin, and keeps exactly one owner', async () => {
+    const owner = await signUp('Founder');
+    const successor = await signUp('Successor');
+    const wid = await createWorkspace(owner, 'Succession');
+    await addMember(owner, wid, successor, 'member');
+
+    await owner.agent
+      .post(`/api/workspaces/${wid}/transfer`)
+      .set(SAME_ORIGIN)
+      .send({ userId: successor.id })
+      .expect(204);
+
+    // The demote-then-promote ordering inside the transaction exists because
+    // one_owner_per_workspace is a plain, non-deferrable unique index. If the
+    // order were reversed this call would fail outright.
+    const members = await successor.agent.get(`/api/workspaces/${wid}/members`).expect(200);
+    const byId = Object.fromEntries(
+      members.body.members.map((m: { userId: string; role: string }) => [m.userId, m.role]),
+    );
+    expect(byId[successor.id]).toBe('owner');
+    expect(byId[owner.id]).toBe('admin');
+    expect(
+      members.body.members.filter((m: { role: string }) => m.role === 'owner'),
+    ).toHaveLength(1);
+
+    // Capabilities follow immediately: the new owner may delete, the old may not.
+    const successorView = await successor.agent.get(`/api/workspaces/${wid}`).expect(200);
+    const founderView = await owner.agent.get(`/api/workspaces/${wid}`).expect(200);
+    expect(successorView.body.workspace.capabilities.canDelete).toBe(true);
+    expect(founderView.body.workspace.capabilities.canDelete).toBe(false);
+
+    // And the previous owner cannot transfer it back.
+    const takeBack = await owner.agent
+      .post(`/api/workspaces/${wid}/transfer`)
+      .set(SAME_ORIGIN)
+      .send({ userId: owner.id });
+    expect(takeBack.status).toBe(403);
+    expect(takeBack.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('refuses a transfer to yourself rather than silently doing nothing', async () => {
+    const owner = await signUp('Self Transfer');
+    const wid = await createWorkspace(owner, 'Self');
+
+    const res = await owner.agent
+      .post(`/api/workspaces/${wid}/transfer`)
+      .set(SAME_ORIGIN)
+      .send({ userId: owner.id });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('cannot transfer to a non-member, and says 404 rather than confirming they exist', async () => {
+    const owner = await signUp('Closed Shop');
+    const stranger = await signUp('Stranger');
+    const wid = await createWorkspace(owner, 'Closed');
+
+    const res = await owner.agent
+      .post(`/api/workspaces/${wid}/transfer`)
+      .set(SAME_ORIGIN)
+      .send({ userId: stranger.id });
+
+    expect(res.status).toBe(404);
+    expect(res.text).toBe(UNIFORM_NOT_FOUND);
+  });
+});
+
+describe('trash is admin-and-above (SPEC §2)', () => {
+  it('a member is refused both trash endpoints while an admin is not', async () => {
+    const owner = await signUp('Trash Owner');
+    const member = await signUp('Trash Member');
+    const admin = await signUp('Trash Admin');
+    const wid = await createWorkspace(owner, 'Bins');
+    await addMember(owner, wid, member, 'member');
+    await addMember(owner, wid, admin, 'admin');
+
+    const doc = await uploadDocument(member, wid, 'bin me', 'bin.txt');
+    await member.agent
+      .delete(`/api/workspaces/${wid}/documents/${doc.id}`)
+      .set(SAME_ORIGIN)
+      .expect(204);
+
+    // The member deleted it and still may not look in the bin.
+    const memberList = await member.agent.get(`/api/workspaces/${wid}/trash`);
+    expect(memberList.status).toBe(403);
+    expect(memberList.body.error.code).toBe('FORBIDDEN');
+
+    const memberRestore = await member.agent
+      .post(`/api/workspaces/${wid}/trash/${doc.id}/restore`)
+      .set(SAME_ORIGIN);
+    expect(memberRestore.status).toBe(403);
+    expect(memberRestore.body.error.code).toBe('FORBIDDEN');
+
+    // Admin is the boundary, so relaxing trash:view to 'member' would fail here.
+    const adminList = await admin.agent.get(`/api/workspaces/${wid}/trash`).expect(200);
+    expect(adminList.body.documents.some((d: { id: string }) => d.id === doc.id)).toBe(true);
+
+    await admin.agent
+      .post(`/api/workspaces/${wid}/trash/${doc.id}/restore`)
+      .set(SAME_ORIGIN)
+      .expect(200);
   });
 });

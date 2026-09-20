@@ -6,6 +6,7 @@ import type { DocumentWithUploader } from '../db/repositories/documents.repo.js'
 import { type Cursor, encodeCursor } from '../lib/cursor.js';
 import { ForbiddenError, NotFoundError, PayloadTooLargeError } from '../lib/errors.js';
 import { SNIFF_BYTES, peekHead, sanitiseFilename, sniffMime } from '../lib/files.js';
+import { ObjectNotFoundError } from '../storage/StorageProvider.js';
 import { storage } from '../storage/index.js';
 import type { AuthUser } from './auth.service.js';
 import { type Subject, can } from './authz.js';
@@ -160,10 +161,17 @@ export async function download(
   if (!found) throw new NotFoundError();
 
   // Every byte is proxied, so every byte passed the checks above.
-  return {
-    document: toDto(found, subject),
-    stream: await storage.getStream(found.document.storageKey),
-  };
+  try {
+    return {
+      document: toDto(found, subject),
+      stream: await storage.getStream(found.document.storageKey),
+    };
+  } catch (err) {
+    // A row whose object is gone (a purge that removed the object then failed
+    // on the row) is "not there", not a server fault.
+    if (err instanceof ObjectNotFoundError) throw new NotFoundError();
+    throw err;
+  }
 }
 
 export async function rename(

@@ -2,7 +2,7 @@ import { db } from '../db/client.js';
 import * as membershipsRepo from '../db/repositories/memberships.repo.js';
 import * as workspacesRepo from '../db/repositories/workspaces.repo.js';
 import type { Role } from '../db/schema.js';
-import { ForbiddenError, NotFoundError } from '../lib/errors.js';
+import { ForbiddenError, NotFoundError, ValidationError } from '../lib/errors.js';
 import type { AuthUser } from './auth.service.js';
 import { type WorkspaceCapabilities, can, capabilitiesFor } from './authz.js';
 import { requireMembership } from './membership.service.js';
@@ -81,7 +81,10 @@ export async function transferOwnership(
   const { role } = await requireMembership(user.id, workspaceId);
   if (!can({ userId: user.id, role }, 'workspace:transfer')) throw new ForbiddenError();
 
-  if (targetUserId === user.id) return;
+  // Silently succeeding while changing nothing is worse than refusing.
+  if (targetUserId === user.id) {
+    throw new ValidationError('You already own this workspace');
+  }
 
   const targetRole = await membershipsRepo.findRole(workspaceId, targetUserId);
   if (!targetRole) throw new NotFoundError();

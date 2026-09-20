@@ -48,7 +48,7 @@ export function WorkspacePage() {
     if (!workspace) return;
     if (
       !window.confirm(
-        `Delete “${workspace.name}”? Members lose access immediately and its share links stop working. It is recoverable for 30 days.`,
+        `Delete “${workspace.name}”? Members lose access immediately and its share links stop working. There is no way to undo this from the app, and it is permanently purged after 30 days.`,
       )
     ) {
       return;

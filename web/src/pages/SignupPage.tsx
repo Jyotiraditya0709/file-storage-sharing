@@ -3,10 +3,11 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.js';
 import { ErrorBanner } from '../components/ErrorBanner.js';
+import { safeNext } from '../format.js';
 
 export function SignupPage() {
   const [params] = useSearchParams();
-  const next = params.get('next') ?? '/workspaces';
+  const next = safeNext(params.get('next'));
 
   // An invitation link sends people here with the invited address prefilled,
   // because acceptance is bound to that address.

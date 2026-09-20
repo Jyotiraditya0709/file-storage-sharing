@@ -1,3 +1,4 @@
+import { isUniqueViolation } from '../db/pg-errors.js';
 import { ConflictError, UnauthorizedError } from '../lib/errors.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 import { hashToken, randomToken, safeEqual } from '../lib/tokens.js';
@@ -47,14 +48,24 @@ export async function signup(input: {
   displayName: string;
   password: string;
 }): Promise<SessionIssued> {
+  // Fast path. The real guard is users_email_unique: two simultaneous signups
+  // both pass this check, and the loser must get a 409, not a 500.
   const existing = await usersRepo.findByEmail(input.email);
   if (existing) throw new ConflictError('Email already registered');
 
-  const user = await usersRepo.insert({
-    email: input.email,
-    displayName: input.displayName,
-    passwordHash: await hashPassword(input.password),
-  });
+  let user;
+  try {
+    user = await usersRepo.insert({
+      email: input.email,
+      displayName: input.displayName,
+      passwordHash: await hashPassword(input.password),
+    });
+  } catch (err) {
+    if (isUniqueViolation(err, 'users_email_unique')) {
+      throw new ConflictError('Email already registered');
+    }
+    throw err;
+  }
 
   const session = await createSession(user.id);
   return { user: toAuthUser(user), ...session };

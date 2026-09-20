@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.js';
 import { ErrorBanner } from '../components/ErrorBanner.js';
+import { safeNext } from '../format.js';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
@@ -13,7 +14,7 @@ export function LoginPage() {
   const { setUser } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const next = params.get('next') ?? '/workspaces';
+  const next = safeNext(params.get('next'));
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();

@@ -5,9 +5,9 @@ import { config } from '../config.js';
 import { attachmentDisposition } from '../lib/files.js';
 import { UNLOCK_TTL_MS, unlockCookieName, verifyUnlockToken } from '../lib/unlock.js';
 import type { Limiters } from '../middleware/rateLimit.js';
+import { parseTokenParam } from '../lib/validation.js';
 import * as linkService from '../services/link.service.js';
 
-const tokenSchema = z.string().min(1).max(512);
 const unlockSchema = z.object({ password: z.string().min(1).max(200) });
 
 function unlockChecker(req: Request): (linkId: string) => boolean {
@@ -19,18 +19,15 @@ export function createPublicRouter(limiters: Limiters): express.Router {
   const publicRouter = express.Router();
 
   publicRouter.get('/:token', async (req: Request, res: Response) => {
-    const token = tokenSchema.parse(req.params.token);
+    const token = parseTokenParam(req.params.token);
 
-    // The link id is needed to name the cookie, and resolving it applies the
-    // same uniform 404 as everything else on this route.
-    const linkId = await linkService.linkIdFor(token);
-    const unlocked = verifyUnlockToken(linkId, req.cookies?.[unlockCookieName(linkId)]);
-
-    res.json(await linkService.publicGet(token, unlocked));
+    // One lookup, not two: the service resolves the link and asks this
+    // callback whether the caller holds a valid unlock cookie for it.
+    res.json(await linkService.publicGet(token, unlockChecker(req)));
   });
 
   publicRouter.post('/:token/unlock', limiters.unlock, async (req: Request, res: Response) => {
-    const token = tokenSchema.parse(req.params.token);
+    const token = parseTokenParam(req.params.token);
     const { password } = unlockSchema.parse(req.body);
 
     const { linkId, unlockToken } = await linkService.unlock(token, password);
@@ -48,7 +45,7 @@ export function createPublicRouter(limiters: Limiters): express.Router {
   });
 
   publicRouter.get('/:token/download', async (req: Request, res: Response) => {
-    const token = tokenSchema.parse(req.params.token);
+    const token = parseTokenParam(req.params.token);
 
     const file = await linkService.publicDownload(token, unlockChecker(req));
 

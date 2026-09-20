@@ -135,13 +135,23 @@ export async function accept(
     return { workspaceId: invitation.workspaceId, role: existingRole };
   }
 
-  await db.transaction(async (tx) => {
-    await membershipsRepo.insert(
-      { workspaceId: invitation.workspaceId, userId: user.id, role: invitation.role },
-      tx,
-    );
-    await invitationsRepo.markAccepted(invitation.workspaceId, invitation.id, user.id, tx);
-  });
+  try {
+    await db.transaction(async (tx) => {
+      await membershipsRepo.insert(
+        { workspaceId: invitation.workspaceId, userId: user.id, role: invitation.role },
+        tx,
+      );
+      await invitationsRepo.markAccepted(invitation.workspaceId, invitation.id, user.id, tx);
+    });
+  } catch (err) {
+    // Two simultaneous accepts both clear the membership check above; the
+    // loser hits the memberships primary key. That is the already-a-member
+    // case, which SPEC §6 says is a success, not an error.
+    if (!isUniqueViolation(err)) throw err;
+
+    const role = await membershipsRepo.findRole(invitation.workspaceId, user.id);
+    return { workspaceId: invitation.workspaceId, role: role ?? invitation.role };
+  }
 
   return { workspaceId: invitation.workspaceId, role: invitation.role };
 }

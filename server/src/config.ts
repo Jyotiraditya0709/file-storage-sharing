@@ -62,17 +62,22 @@ const envSchema = z
       return z.NEVER;
     }
 
-    // A default session secret is a convenience for local work and a hole in
-    // production, so it is allowed in exactly one of those.
-    const sessionSecret = env.SESSION_SECRET ?? 'insecure-development-session-secret';
-    if (env.NODE_ENV === 'production' && !env.SESSION_SECRET) {
+    // SESSION_SECRET also keys the share-link unlock HMAC, so a fallback is a
+    // convenience for local work and a signing key everywhere else. Required
+    // whenever this looks like a real deployment: NODE_ENV=production, or an
+    // https APP_URL (which is also what turns on Secure cookies).
+    const looksDeployed =
+      env.NODE_ENV === 'production' || env.APP_URL.startsWith('https://');
+
+    if (looksDeployed && !env.SESSION_SECRET) {
       ctx.addIssue({
         code: 'custom',
         path: ['SESSION_SECRET'],
-        message: 'required when NODE_ENV=production',
+        message: 'required when NODE_ENV=production or APP_URL is https',
       });
       return z.NEVER;
     }
+    const sessionSecret = env.SESSION_SECRET ?? 'insecure-development-session-secret';
 
     return { ...env, DATABASE_URL: databaseUrl, SESSION_SECRET: sessionSecret };
   });

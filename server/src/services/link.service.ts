@@ -6,6 +6,7 @@ import { ForbiddenError, NotFoundError } from '../lib/errors.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 import { hashToken, randomToken, tokenTail } from '../lib/tokens.js';
 import { issueUnlockToken } from '../lib/unlock.js';
+import { ObjectNotFoundError } from '../storage/StorageProvider.js';
 import { storage } from '../storage/index.js';
 import type { AuthUser } from './auth.service.js';
 import { type Subject, can } from './authz.js';
@@ -148,10 +149,13 @@ async function loadUsable(token: string) {
  * it is unlocked. SPEC §5 grants metadata to the link holder, and holding a
  * protected link means knowing the password.
  */
-export async function publicGet(token: string, unlocked: boolean): Promise<PublicLinkView> {
+export async function publicGet(
+  token: string,
+  isUnlocked: (linkId: string) => boolean,
+): Promise<PublicLinkView> {
   const { link, document, uploaderDisplayName } = await loadUsable(token);
 
-  if (link.passwordHash && !unlocked) {
+  if (link.passwordHash && !isUnlocked(link.id)) {
     return { requiresPassword: true };
   }
 
@@ -164,12 +168,6 @@ export async function publicGet(token: string, unlocked: boolean): Promise<Publi
       uploadedBy: uploaderDisplayName,
     },
   };
-}
-
-/** Resolves the link id so the caller can name the per-link cookie. */
-export async function linkIdFor(token: string): Promise<string> {
-  const { link } = await loadUsable(token);
-  return link.id;
 }
 
 export async function unlock(
@@ -201,12 +199,17 @@ export async function publicDownload(
 
   // Atomic: the count and the limit are evaluated in one statement, so ten
   // concurrent requests against max_downloads = 5 yield exactly five.
-  if (!(await linksRepo.incrementDownload(link.id))) throw new NotFoundError();
+  if (!(await linksRepo.incrementDownload(document.id, link.id))) throw new NotFoundError();
 
-  return {
-    stream: await storage.getStream(document.storageKey),
-    name: document.name,
-    mimeType: document.mimeType,
-    sizeBytes: document.sizeBytes,
-  };
+  try {
+    return {
+      stream: await storage.getStream(document.storageKey),
+      name: document.name,
+      mimeType: document.mimeType,
+      sizeBytes: document.sizeBytes,
+    };
+  } catch (err) {
+    if (err instanceof ObjectNotFoundError) throw new NotFoundError();
+    throw err;
+  }
 }

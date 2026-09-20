@@ -27,7 +27,18 @@ export function readSingleFile(req: Request, maxBytes: number): Promise<Uploaded
       return;
     }
 
-    const bb = busboy({ headers: req.headers, limits: { files: 1, fileSize: maxBytes } });
+    const bb = busboy({
+      headers: req.headers,
+      limits: {
+        files: 1,
+        fileSize: maxBytes,
+        // Without these, a body of thousands of tiny non-file parts is parsed
+        // without bound even though we only ever read one file field.
+        fields: 10,
+        fieldSize: 8 * 1024,
+        parts: 12,
+      },
+    });
 
     let settled = false;
     let truncated = false;

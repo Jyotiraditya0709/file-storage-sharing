@@ -1,7 +1,7 @@
 import express from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { parseUuidParam } from '../lib/validation.js';
+import { parseTokenParam, parseUuidParam } from '../lib/validation.js';
 import { requireUser } from '../middleware/auth.js';
 import * as invitationService from '../services/invitation.service.js';
 
@@ -39,14 +39,13 @@ workspaceInvitationsRouter.delete('/:iid', async (req: Request, res: Response) =
 /** Token-addressed, mounted at /api/invitations. */
 export const invitationsRouter = express.Router();
 
-const tokenSchema = z.string().min(1).max(512);
 
 invitationsRouter.get('/:token', async (req: Request, res: Response) => {
-  const token = tokenSchema.parse(req.params.token);
+  const token = parseTokenParam(req.params.token);
   res.json({ invitation: await invitationService.preview(token) });
 });
 
 invitationsRouter.post('/:token/accept', requireUser, async (req: Request, res: Response) => {
-  const token = tokenSchema.parse(req.params.token);
+  const token = parseTokenParam(req.params.token);
   res.json(await invitationService.accept(req.user!, token));
 });

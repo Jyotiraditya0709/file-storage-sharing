@@ -10,7 +10,10 @@ export const membersRouter = express.Router({ mergeParams: true });
 
 membersRouter.use(requireUser);
 
-const roleSchema = z.object({ role: z.enum(['owner', 'admin', 'member', 'viewer']) });
+// 'owner' is absent to match the invitations route: ownership moves only
+// through /transfer, so asking for it here is a malformed request, not a
+// permissions question. authz.can() refuses it too, regardless of this.
+const roleSchema = z.object({ role: z.enum(['admin', 'member', 'viewer']) });
 
 membersRouter.get('/', async (req: Request, res: Response) => {
   const wid = parseUuidParam(req.params.wid);

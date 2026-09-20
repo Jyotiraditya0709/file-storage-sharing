@@ -14,7 +14,14 @@ export function parseUuidParam(value: unknown): string {
   return result.data;
 }
 
-/** Body parsing at the route boundary. Failures are 400 VALIDATION_ERROR. */
-export function parseBody<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> {
-  return schema.parse(body);
+/**
+ * A share or invitation token from the path. Anything that cannot be a token —
+ * wrong type, empty, absurdly long — is the same 404 as a token that simply
+ * does not exist, so the uniform-404 story has no seam. A 400 here would tell
+ * a prober that their input was merely malformed.
+ */
+export function parseTokenParam(value: unknown): string {
+  const result = z.string().min(1).max(512).safeParse(value);
+  if (!result.success) throw new NotFoundError();
+  return result.data;
 }

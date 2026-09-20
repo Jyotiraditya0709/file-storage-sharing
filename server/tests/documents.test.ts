@@ -66,10 +66,10 @@ describe('oversize upload leaves no row and no object behind (ARCHITECTURE #6)',
     // No object: the only key under this workspace's prefix is the good one,
     // and every other key that the bucket might hold for it does not exist.
     const keys = await keysUnder(`ws/${wid}/`);
-    const strays = keys.filter((key) => key !== goodKey);
-    for (const stray of strays) expect(await storage.exists(stray)).toBe(false);
-    expect(strays).toEqual([]);
     expect(keys).toEqual([goodKey]);
+    // And the one key that is there really is readable, so an empty listing
+    // cannot pass this test by the bucket being unreachable.
+    expect(await storage.exists(goodKey)).toBe(true);
 
     // Trash is not a hiding place for it either.
     const trash = await user.agent.get(`/api/workspaces/${wid}/trash`);
@@ -204,13 +204,6 @@ describe('document listing is cursor-paginated, newest first, live only (SPEC §
     expect(page2.body.nextCursor).toBeNull();
   });
 
-  // The pagination tests derive their expectations from PAGE_SIZE, which keeps
-  // them honest about the mechanism but pins nothing. SPEC §3 fixes the number
-  // itself at 50, so that is asserted directly.
-  it('pages at exactly 50, per SPEC §3', () => {
-    expect(PAGE_SIZE).toBe(50);
-  });
-
   it(`hands back a cursor once there are more than ${PAGE_SIZE} documents`, async () => {
     const paginator = await signUp('Paginator');
     const pagedWid = await createWorkspace(paginator, 'Two pages');
@@ -225,7 +218,10 @@ describe('document listing is cursor-paginated, newest first, live only (SPEC §
 
     const page1 = await paginator.agent.get(`/api/workspaces/${pagedWid}/documents`);
     expect(page1.status).toBe(200);
-    expect(page1.body.documents).toHaveLength(PAGE_SIZE);
+    // The literal 50 from SPEC §3, asserted against what the endpoint actually
+    // returned. Every other expectation here derives from PAGE_SIZE, so this is
+    // the one line that would fail if the page size drifted from the spec.
+    expect(page1.body.documents).toHaveLength(50);
     expect(typeof page1.body.nextCursor).toBe('string');
     expect(page1.body.documents.map((d: UploadedDoc) => d.id)).toEqual(
       [...uploaded].reverse().slice(0, PAGE_SIZE),

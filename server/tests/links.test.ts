@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -292,5 +293,26 @@ describe('who may revoke a share link (SPEC §5)', () => {
       .set(SAME_ORIGIN);
     expect(byOwner.status).toBe(204);
     expect((await request(app).get(`/api/s/${theirs.token}/download`)).status).toBe(404);
+  });
+});
+
+describe('only the hash of a share token is stored (SPEC §5)', () => {
+  it('the row holds sha256(token) and the last 6 characters, and nothing else that reveals it', async () => {
+    const owner = await signUp('Hash Owner');
+    const wid = await createWorkspace(owner, 'Hashes');
+    const doc = await uploadDocument(owner, wid, 'bytes', 'bytes.txt');
+    const { token, linkId } = await createShareLink(owner, wid, doc.id);
+
+    const row = await storedLink(linkId);
+
+    expect(row.tokenHash.equals(createHash('sha256').update(token).digest())).toBe(true);
+    expect(row.tokenTail).toBe(token.slice(-6));
+
+    // Nothing stored anywhere on the row can reproduce the token. If a plaintext
+    // column were ever added, this fails.
+    for (const [column, value] of Object.entries(row)) {
+      if (column === 'tokenTail') continue;
+      expect(String(value)).not.toContain(token);
+    }
   });
 });

@@ -34,9 +34,13 @@ export function buildApp(overrides: AppOverrides = {}): Express {
   const app = express();
   app.disable('x-powered-by');
 
-  // Nothing this API serves should ever be content-sniffed by a browser.
   app.use((_req: Request, res: Response, next: NextFunction) => {
+    // Nothing this API serves should ever be content-sniffed by a browser.
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    // The public share page is /s/:token, so the secret is in the URL path.
+    // Nothing on that page loads a third-party resource today; this makes sure
+    // that if something ever does, it cannot carry the token in a Referer.
+    res.setHeader('Referrer-Policy', 'no-referrer');
     next();
   });
 

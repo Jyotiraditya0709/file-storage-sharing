@@ -27,3 +27,14 @@ export function shortType(mimeType: string): string {
   const subtype = mimeType.split('/')[1] ?? mimeType;
   return subtype.split(';')[0] ?? subtype;
 }
+
+/**
+ * Only same-origin, non-protocol-relative paths. React Router resolves
+ * `next` against the current location, and `//evil.com` makes
+ * history.pushState throw SecurityError — a crash on a crafted link rather
+ * than an open redirect, but neither is acceptable.
+ */
+export function safeNext(raw: string | null, fallback = '/workspaces'): string {
+  if (!raw) return fallback;
+  return /^\/(?!\/)/.test(raw) ? raw : fallback;
+}

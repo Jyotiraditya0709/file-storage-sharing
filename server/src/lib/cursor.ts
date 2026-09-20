@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { ValidationError } from './errors.js';
 
 export interface Cursor {
@@ -18,7 +19,9 @@ export function decodeCursor(raw: string): Cursor {
   const createdAt = new Date(decoded.slice(0, separator));
   const id = decoded.slice(separator + 1);
 
-  if (Number.isNaN(createdAt.getTime()) || id.length === 0) {
+  // The id goes into a comparison against a uuid column, so a non-uuid would
+  // reach Postgres and come back as a 500 rather than a client error.
+  if (Number.isNaN(createdAt.getTime()) || !z.string().uuid().safeParse(id).success) {
     throw new ValidationError('Invalid cursor');
   }
   return { createdAt, id };

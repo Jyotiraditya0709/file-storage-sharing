@@ -102,13 +102,16 @@ export async function findByTokenHash(tokenHash: Buffer): Promise<
  * downloads cannot both read the same count and both pass: zero rows back
  * means the limit was already reached.
  */
-export async function incrementDownload(linkId: string): Promise<boolean> {
+export async function incrementDownload(documentId: string, linkId: string): Promise<boolean> {
   const rows = await db
     .update(shareLinks)
     .set({ downloadCount: sql`${shareLinks.downloadCount} + 1` })
     .where(
       and(
         eq(shareLinks.id, linkId),
+        // The document is the link's scope; carrying it here keeps the
+        // "never a bare resource id" rule visible in the signature.
+        eq(shareLinks.documentId, documentId),
         sql`(${shareLinks.maxDownloads} is null or ${shareLinks.downloadCount} < ${shareLinks.maxDownloads})`,
       ),
     )

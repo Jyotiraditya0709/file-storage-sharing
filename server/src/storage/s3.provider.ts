@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { PassThrough, type Readable } from 'node:stream';
+import { PassThrough, Transform, type Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -44,14 +45,21 @@ export class S3StorageProvider implements StorageProvider {
     const hash = createHash('sha256');
     let size = 0;
 
-    // Tee the stream: bytes flow to S3 while we hash and count them. Nothing
-    // is accumulated, so a 50 MB upload costs a part buffer, not 50 MB.
-    const tee = new PassThrough();
-    body.on('data', (chunk: Buffer) => {
-      hash.update(chunk);
-      size += chunk.length;
+    // Hash and count in a Transform, then pipeline into the stream S3 reads.
+    // pipeline (not pipe) because pipe does not forward errors: if the client
+    // aborts mid-upload, pipe would leave this PassThrough open forever and
+    // upload.done() would never settle, hanging the request and leaving the
+    // multipart upload open. pipeline destroys the destination instead, so
+    // done() rejects and the caller's cleanup runs.
+    const meter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        hash.update(chunk);
+        size += chunk.length;
+        callback(null, chunk);
+      },
     });
-    body.pipe(tee);
+    const tee = new PassThrough();
+    const pumped = pipeline(body, meter, tee);
 
     const upload = new Upload({
       client: this.client,
@@ -65,7 +73,7 @@ export class S3StorageProvider implements StorageProvider {
       queueSize: 4,
     });
 
-    await upload.done();
+    await Promise.all([upload.done(), pumped]);
 
     return { size, sha256: hash.digest() };
   }

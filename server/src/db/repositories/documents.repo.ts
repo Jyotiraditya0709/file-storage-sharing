@@ -184,8 +184,10 @@ export async function restore(workspaceId: string, documentId: string): Promise<
     .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, documentId)));
 }
 
-export async function hardDelete(documentId: string): Promise<void> {
-  await db.delete(documents).where(eq(documents.id, documentId));
+export async function hardDelete(workspaceId: string, documentId: string): Promise<void> {
+  await db
+    .delete(documents)
+    .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, documentId)));
 }
 
 /**
