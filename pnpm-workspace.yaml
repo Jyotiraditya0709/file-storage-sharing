@@ -2,12 +2,17 @@ packages:
   - server
   - web
 
-# pnpm 11 blocks dependency build scripts unless they are allowed here.
-# esbuild is Vite's bundler and puts its platform binary in place in a
-# postinstall script; without this `pnpm --filter web build` fails.
-# Later tasks add argon2 here.
+# pnpm 11 blocks dependency build scripts unless a decision is recorded here.
 allowBuilds:
+  # esbuild is Vite's bundler; argon2 compiles the password-hashing binding.
   esbuild: true
+  argon2: true
+  # Transitive testcontainers deps. These are optional native accelerations for
+  # ssh2's crypto and protobuf paths; Testcontainers talks to a local Docker
+  # socket without them, and denying keeps `pnpm install` compiler-free.
+  cpu-features: false
+  protobufjs: false
+  ssh2: false
 
 minimumReleaseAgeExclude:
   - tsx@4.23.15
