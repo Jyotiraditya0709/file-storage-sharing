@@ -8,7 +8,7 @@ const uuid = z.string().uuid();
  * that simply does not exist — so it is a 404, never a 400 and never a 500
  * from Postgres rejecting the cast. Keeps the outsider story uniform.
  */
-export function parseUuidParam(value: string | undefined): string {
+export function parseUuidParam(value: unknown): string {
   const result = uuid.safeParse(value);
   if (!result.success) throw new NotFoundError();
   return result.data;
