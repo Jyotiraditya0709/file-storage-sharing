@@ -1,6 +1,10 @@
 .env
 node_modules
 dist
+**/dist
+**/coverage
+**/.turbo
+**/.vite
 .claude/settings.local.json
 .claude/worktrees/
 CLAUDE.local.md

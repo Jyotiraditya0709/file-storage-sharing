@@ -1,0 +1,13 @@
+packages:
+  - server
+  - web
+
+# pnpm 11 blocks dependency build scripts unless they are allowed here.
+# esbuild is Vite's bundler and puts its platform binary in place in a
+# postinstall script; without this `pnpm --filter web build` fails.
+# Later tasks add argon2 here.
+allowBuilds:
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - tsx@4.23.15

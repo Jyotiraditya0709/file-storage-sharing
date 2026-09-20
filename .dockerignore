@@ -1,0 +1,15 @@
+# Keep the build context small. NOTE: drizzle/ is deliberately NOT excluded —
+# the build stage needs the migration files for the compose `migrate` service.
+.git
+.gitignore
+.dockerignore
+node_modules
+**/node_modules
+**/dist
+**/coverage
+**/.vite
+.env
+.env.*
+.claude
+docs
+*.md

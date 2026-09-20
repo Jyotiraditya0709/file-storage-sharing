@@ -1,0 +1,96 @@
+name: blkbox-file-storage
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # No host ports, on purpose: the browser must never be able to reach object
+  # storage. Every byte is proxied through the API. See ARCHITECTURE.md.
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        set -eu
+        mc mb --ignore-existing local/${S3_BUCKET}
+        mc anonymous set none local/${S3_BUCKET}
+        echo "bucket ${S3_BUCKET} ready and private"
+
+  # Runs from the `build` stage, not `runtime`: drizzle-kit is a devDependency
+  # and the runtime stage is pruned with `pnpm deploy --prod`.
+  migrate:
+    build:
+      context: .
+      target: build
+    depends_on:
+      postgres:
+        condition: service_healthy
+    working_dir: /app/server
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    # The binary is invoked directly rather than through `pnpm exec`: pnpm 11
+    # verifies node_modules against the lockfile before running a command, and
+    # in this image it decides a reinstall is needed and aborts for want of a
+    # TTY. Calling drizzle-kit straight avoids that machinery entirely.
+    command: ['./node_modules/.bin/drizzle-kit', 'migrate']
+
+  app:
+    build:
+      context: .
+      target: runtime
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      PORT: ${PORT}
+      WEB_DIST_PATH: ${WEB_DIST_PATH}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE}
+      STORAGE_DRIVER: ${STORAGE_DRIVER}
+      SESSION_SECRET: ${SESSION_SECRET}
+      APP_URL: ${APP_URL}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES}
+    ports:
+      - '3000:3000'
+
+volumes:
+  pgdata:
+  miniodata:
