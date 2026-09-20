@@ -8,7 +8,7 @@ import { ForbiddenError, NotFoundError, PayloadTooLargeError } from '../lib/erro
 import { SNIFF_BYTES, peekHead, sanitiseFilename, sniffMime } from '../lib/files.js';
 import { storage } from '../storage/index.js';
 import type { AuthUser } from './auth.service.js';
-import { can } from './authz.js';
+import { type Subject, can } from './authz.js';
 import { requireMembership } from './membership.service.js';
 
 export const PAGE_SIZE = 50;
@@ -23,6 +23,9 @@ export interface DocumentDto {
   createdAt: Date;
   deletedAt: Date | null;
   uploadedBy: { id: string | null; displayName: string | null };
+  /** Rename and delete share one rule in authz: admin+, or a member's own upload. */
+  canEdit: boolean;
+  canShare: boolean;
 }
 
 export interface UploadSource {
@@ -31,7 +34,10 @@ export interface UploadSource {
   limitReached: () => boolean;
 }
 
-function toDto({ document, uploaderDisplayName }: DocumentWithUploader): DocumentDto {
+function toDto(
+  { document, uploaderDisplayName }: DocumentWithUploader,
+  subject: Subject,
+): DocumentDto {
   return {
     id: document.id,
     name: document.name,
@@ -41,6 +47,8 @@ function toDto({ document, uploaderDisplayName }: DocumentWithUploader): Documen
     createdAt: document.createdAt,
     deletedAt: document.deletedAt,
     uploadedBy: { id: document.uploadedBy, displayName: uploaderDisplayName },
+    canEdit: can(subject, 'document:rename', { ownerId: document.uploadedBy }),
+    canShare: can(subject, 'link:create'),
   };
 }
 
@@ -58,7 +66,8 @@ export async function upload(
   source: UploadSource,
 ): Promise<DocumentDto> {
   const { role } = await requireMembership(user.id, workspaceId);
-  if (!can({ userId: user.id, role }, 'document:create')) throw new ForbiddenError();
+  const subject: Subject = { userId: user.id, role };
+  if (!can(subject, 'document:create')) throw new ForbiddenError();
 
   const name = sanitiseFilename(source.filename);
   const documentId = randomUUID();
@@ -92,7 +101,7 @@ export async function upload(
       sha256,
       storageKey: key,
     });
-    return toDto({ document: row, uploaderDisplayName: user.displayName });
+    return toDto({ document: row, uploaderDisplayName: user.displayName }, subject);
   } catch (err) {
     // The object exists but the row does not: clean up rather than orphan it.
     await storage.delete(key).catch(() => undefined);
@@ -106,7 +115,8 @@ export async function list(
   cursor: Cursor | null,
 ): Promise<{ documents: DocumentDto[]; nextCursor: string | null }> {
   const { role } = await requireMembership(user.id, workspaceId);
-  if (!can({ userId: user.id, role }, 'document:read')) throw new ForbiddenError();
+  const subject: Subject = { userId: user.id, role };
+  if (!can(subject, 'document:read')) throw new ForbiddenError();
 
   // One extra row tells us whether another page exists without a count query.
   const rows = await documentsRepo.listLive(workspaceId, cursor, PAGE_SIZE + 1);
@@ -114,7 +124,7 @@ export async function list(
   const last = page.at(-1);
 
   return {
-    documents: page.map(toDto),
+    documents: page.map((row) => toDto(row, subject)),
     nextCursor:
       rows.length > PAGE_SIZE && last
         ? encodeCursor({ createdAt: last.document.createdAt, id: last.document.id })
@@ -128,12 +138,13 @@ export async function get(
   documentId: string,
 ): Promise<DocumentDto> {
   const { role } = await requireMembership(user.id, workspaceId);
-  if (!can({ userId: user.id, role }, 'document:read')) throw new ForbiddenError();
+  const subject: Subject = { userId: user.id, role };
+  if (!can(subject, 'document:read')) throw new ForbiddenError();
 
   const found = await documentsRepo.findLive(workspaceId, documentId);
   if (!found) throw new NotFoundError();
 
-  return toDto(found);
+  return toDto(found, subject);
 }
 
 export async function download(
@@ -142,13 +153,17 @@ export async function download(
   documentId: string,
 ): Promise<{ document: DocumentDto; stream: Readable }> {
   const { role } = await requireMembership(user.id, workspaceId);
-  if (!can({ userId: user.id, role }, 'document:read')) throw new ForbiddenError();
+  const subject: Subject = { userId: user.id, role };
+  if (!can(subject, 'document:read')) throw new ForbiddenError();
 
   const found = await documentsRepo.findLive(workspaceId, documentId);
   if (!found) throw new NotFoundError();
 
   // Every byte is proxied, so every byte passed the checks above.
-  return { document: toDto(found), stream: await storage.getStream(found.document.storageKey) };
+  return {
+    document: toDto(found, subject),
+    stream: await storage.getStream(found.document.storageKey),
+  };
 }
 
 export async function rename(
@@ -171,7 +186,7 @@ export async function rename(
   const name = sanitiseFilename(rawName);
   await documentsRepo.rename(workspaceId, documentId, name);
 
-  return toDto({ ...found, document: { ...found.document, name } });
+  return toDto({ ...found, document: { ...found.document, name } }, { userId: user.id, role });
 }
 
 export async function softDelete(
@@ -201,7 +216,10 @@ export async function listTrash(user: AuthUser, workspaceId: string): Promise<Do
   // Anything older than the retention window is purge-eligible, so it is not
   // offered for restore.
   const since = new Date(Date.now() - TRASH_RETENTION_MS);
-  return (await documentsRepo.listTrash(workspaceId, since, PAGE_SIZE)).map(toDto);
+  const subject: Subject = { userId: user.id, role };
+  return (await documentsRepo.listTrash(workspaceId, since, PAGE_SIZE)).map((row) =>
+    toDto(row, subject),
+  );
 }
 
 export async function restore(
@@ -221,5 +239,8 @@ export async function restore(
   }
 
   await documentsRepo.restore(workspaceId, documentId);
-  return toDto({ ...found, document: { ...found.document, deletedAt: null } });
+  return toDto(
+    { ...found, document: { ...found.document, deletedAt: null } },
+    { userId: user.id, role },
+  );
 }

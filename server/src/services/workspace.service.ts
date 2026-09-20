@@ -4,7 +4,7 @@ import * as workspacesRepo from '../db/repositories/workspaces.repo.js';
 import type { Role } from '../db/schema.js';
 import { ForbiddenError, NotFoundError } from '../lib/errors.js';
 import type { AuthUser } from './auth.service.js';
-import { can } from './authz.js';
+import { type WorkspaceCapabilities, can, capabilitiesFor } from './authz.js';
 import { requireMembership } from './membership.service.js';
 
 export interface WorkspaceDto {
@@ -12,6 +12,22 @@ export interface WorkspaceDto {
   name: string;
   role: Role;
   createdAt: Date;
+  /** What this caller may do here. The UI renders from these; the server still enforces. */
+  capabilities: WorkspaceCapabilities;
+}
+
+function toDto(
+  workspace: { id: string; name: string; createdAt: Date },
+  userId: string,
+  role: Role,
+): WorkspaceDto {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    role,
+    createdAt: workspace.createdAt,
+    capabilities: capabilitiesFor({ userId, role }),
+  };
 }
 
 export async function create(user: AuthUser, name: string): Promise<WorkspaceDto> {
@@ -20,25 +36,20 @@ export async function create(user: AuthUser, name: string): Promise<WorkspaceDto
   return db.transaction(async (tx) => {
     const workspace = await workspacesRepo.insert({ name, createdBy: user.id }, tx);
     await membershipsRepo.insert({ workspaceId: workspace.id, userId: user.id, role: 'owner' }, tx);
-    return { id: workspace.id, name: workspace.name, role: 'owner', createdAt: workspace.createdAt };
+    return toDto(workspace, user.id, 'owner');
   });
 }
 
 export async function listForUser(user: AuthUser): Promise<WorkspaceDto[]> {
   const rows = await workspacesRepo.listForUser(user.id);
-  return rows.map(({ workspace, role }) => ({
-    id: workspace.id,
-    name: workspace.name,
-    role,
-    createdAt: workspace.createdAt,
-  }));
+  return rows.map(({ workspace, role }) => toDto(workspace, user.id, role));
 }
 
 export async function get(user: AuthUser, workspaceId: string): Promise<WorkspaceDto> {
   const { role, workspace } = await requireMembership(user.id, workspaceId);
   if (!can({ userId: user.id, role }, 'workspace:view')) throw new ForbiddenError();
 
-  return { id: workspace.id, name: workspace.name, role, createdAt: workspace.createdAt };
+  return toDto(workspace, user.id, role);
 }
 
 export async function rename(
@@ -50,7 +61,7 @@ export async function rename(
   if (!can({ userId: user.id, role }, 'workspace:rename')) throw new ForbiddenError();
 
   await workspacesRepo.updateName(workspaceId, name);
-  return { id: workspace.id, name, role, createdAt: workspace.createdAt };
+  return toDto({ ...workspace, name }, user.id, role);
 }
 
 export async function softDelete(user: AuthUser, workspaceId: string): Promise<void> {

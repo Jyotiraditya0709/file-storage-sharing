@@ -113,3 +113,32 @@ export function can(subject: Subject, action: Action, resource: Resource = {}): 
 
   return false;
 }
+
+/**
+ * What the current member may do in this workspace, as booleans.
+ *
+ * The API hands this to the UI so the browser renders actions without owning
+ * any authorization logic of its own: there is no role table in the client to
+ * drift out of step with this file. The server still enforces every one of
+ * these independently on the actual request — these flags decide what is
+ * rendered, never what is allowed.
+ */
+export interface WorkspaceCapabilities {
+  canUpload: boolean;
+  canInvite: boolean;
+  canManageMembers: boolean;
+  canSeeTrash: boolean;
+  canRename: boolean;
+  canDelete: boolean;
+}
+
+export function capabilitiesFor(subject: Subject): WorkspaceCapabilities {
+  return {
+    canUpload: can(subject, 'document:create'),
+    canInvite: can(subject, 'member:invite'),
+    canManageMembers: can(subject, 'member:update'),
+    canSeeTrash: can(subject, 'trash:view'),
+    canRename: can(subject, 'workspace:rename'),
+    canDelete: can(subject, 'workspace:delete'),
+  };
+}

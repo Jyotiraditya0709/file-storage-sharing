@@ -525,3 +525,96 @@ describe('workspace soft-delete hides documents, downloads and share links', () 
     expect(get.text).toBe(UNIFORM_NOT_FOUND);
   });
 });
+
+/**
+ * The UI renders its controls from these booleans and owns no role table of
+ * its own, so "the interface reflects permissions" (SPEC §7) is true by
+ * construction rather than by two implementations agreeing.
+ */
+describe('server-computed capabilities drive what the UI renders (SPEC §7)', () => {
+  it("a viewer's capabilities are all false and an owner's are all true", async () => {
+    const owner = await signUp('Cap Owner');
+    const viewer = await signUp('Cap Viewer');
+    const wid = await createWorkspace(owner, 'Capabilities');
+    await addMember(owner, wid, viewer, 'viewer');
+
+    const asOwner = await owner.agent.get(`/api/workspaces/${wid}`).expect(200);
+    const asViewer = await viewer.agent.get(`/api/workspaces/${wid}`).expect(200);
+
+    expect(asOwner.body.workspace.capabilities).toEqual({
+      canUpload: true,
+      canInvite: true,
+      canManageMembers: true,
+      canSeeTrash: true,
+      canRename: true,
+      canDelete: true,
+    });
+
+    expect(asViewer.body.workspace.capabilities).toEqual({
+      canUpload: false,
+      canInvite: false,
+      canManageMembers: false,
+      canSeeTrash: false,
+      canRename: false,
+      canDelete: false,
+    });
+
+    // Every flag has a matching server-side refusal, so hiding a control is
+    // never the only thing standing between a viewer and the action.
+    expect(Object.values(asViewer.body.workspace.capabilities).every((v) => v === false)).toBe(
+      true,
+    );
+  });
+
+  it('per-document and per-link flags follow ownership, not just role', async () => {
+    const owner = await signUp('Doc Owner');
+    const member = await signUp('Doc Member');
+    const viewer = await signUp('Doc Viewer');
+    const wid = await createWorkspace(owner, 'Flags');
+    await addMember(owner, wid, member, 'member');
+    await addMember(owner, wid, viewer, 'viewer');
+
+    const mine = await uploadDocument(member, wid, 'mine', 'mine.txt');
+    await uploadDocument(owner, wid, 'theirs', 'theirs.txt');
+
+    const asMember = await member.agent.get(`/api/workspaces/${wid}/documents`).expect(200);
+    const flags = Object.fromEntries(
+      asMember.body.documents.map((d: { name: string; canEdit: boolean }) => [d.name, d.canEdit]),
+    );
+    expect(flags).toEqual({ 'mine.txt': true, 'theirs.txt': false });
+    expect(
+      asMember.body.documents.every((d: { canShare: boolean }) => d.canShare === true),
+    ).toBe(true);
+
+    const asViewer = await viewer.agent.get(`/api/workspaces/${wid}/documents`).expect(200);
+    expect(
+      asViewer.body.documents.every(
+        (d: { canEdit: boolean; canShare: boolean }) => !d.canEdit && !d.canShare,
+      ),
+    ).toBe(true);
+
+    // A member may revoke the link they made; a peer member may not.
+    const other = await signUp('Other Member');
+    await addMember(owner, wid, other, 'member');
+    await member.agent
+      .post(`/api/workspaces/${wid}/documents/${mine.id}/links`)
+      .set(SAME_ORIGIN)
+      .send({})
+      .expect(201);
+
+    const mineView = await member.agent
+      .get(`/api/workspaces/${wid}/documents/${mine.id}/links`)
+      .expect(200);
+    expect(mineView.body.links[0].canRevoke).toBe(true);
+
+    const peerView = await other.agent
+      .get(`/api/workspaces/${wid}/documents/${mine.id}/links`)
+      .expect(200);
+    expect(peerView.body.links[0].canRevoke).toBe(false);
+
+    const ownerView = await owner.agent
+      .get(`/api/workspaces/${wid}/documents/${mine.id}/links`)
+      .expect(200);
+    expect(ownerView.body.links[0].canRevoke).toBe(true);
+  });
+});

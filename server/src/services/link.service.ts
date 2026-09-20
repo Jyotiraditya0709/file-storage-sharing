@@ -8,7 +8,7 @@ import { hashToken, randomToken, tokenTail } from '../lib/tokens.js';
 import { issueUnlockToken } from '../lib/unlock.js';
 import { storage } from '../storage/index.js';
 import type { AuthUser } from './auth.service.js';
-import { can } from './authz.js';
+import { type Subject, can } from './authz.js';
 import { requireMembership } from './membership.service.js';
 
 export interface ShareLinkDto {
@@ -21,6 +21,8 @@ export interface ShareLinkDto {
   downloadCount: number;
   revokedAt: Date | null;
   createdAt: Date;
+  /** Owners and admins revoke anything; a member only their own. */
+  canRevoke: boolean;
 }
 
 export interface PublicLinkView {
@@ -33,7 +35,11 @@ export interface PublicLinkView {
   };
 }
 
-function toDto(link: linksRepo.ShareLinkRow, creatorDisplayName: string | null): ShareLinkDto {
+function toDto(
+  link: linksRepo.ShareLinkRow,
+  creatorDisplayName: string | null,
+  subject: Subject,
+): ShareLinkDto {
   return {
     id: link.id,
     tokenTail: link.tokenTail,
@@ -44,6 +50,7 @@ function toDto(link: linksRepo.ShareLinkRow, creatorDisplayName: string | null):
     downloadCount: link.downloadCount,
     revokedAt: link.revokedAt,
     createdAt: link.createdAt,
+    canRevoke: can(subject, 'link:revoke', { ownerId: link.createdBy }),
   };
 }
 
@@ -72,7 +79,10 @@ export async function create(
   });
 
   // Shown once. Only the sha256 is stored, so this URL cannot be recovered.
-  return { link: toDto(row, user.displayName), url: `${config.appUrl}/s/${token}` };
+  return {
+    link: toDto(row, user.displayName, { userId: user.id, role }),
+    url: `${config.appUrl}/s/${token}`,
+  };
 }
 
 export async function listForDocument(
@@ -86,8 +96,9 @@ export async function listForDocument(
   const document = await documentsRepo.findLive(workspaceId, documentId);
   if (!document) throw new NotFoundError();
 
+  const subject: Subject = { userId: user.id, role };
   const rows = await linksRepo.listForDocument(workspaceId, documentId);
-  return rows.map(({ link, creatorDisplayName }) => toDto(link, creatorDisplayName));
+  return rows.map(({ link, creatorDisplayName }) => toDto(link, creatorDisplayName, subject));
 }
 
 export async function revoke(
