@@ -1,6 +1,8 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './App';
+import { BrowserRouter } from 'react-router-dom';
+import { App } from './App.js';
+import './styles.css';
 
 const container = document.getElementById('root');
 if (!container) {
@@ -9,6 +11,8 @@ if (!container) {
 
 createRoot(container).render(
   <React.StrictMode>
-    <App />
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
   </React.StrictMode>,
 );
