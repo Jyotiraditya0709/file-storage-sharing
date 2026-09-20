@@ -15,6 +15,13 @@
       "when": 1789911551323,
       "tag": "0001_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789912782601,
+      "tag": "0002_share_link_token_tail",
+      "breakpoints": true
     }
   ]
 }

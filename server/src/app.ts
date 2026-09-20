@@ -10,6 +10,8 @@ import { authRouter } from './routes/auth.routes.js';
 import { documentsRouter, trashRouter } from './routes/documents.routes.js';
 import { healthRouter } from './routes/health.routes.js';
 import { invitationsRouter, workspaceInvitationsRouter } from './routes/invitations.routes.js';
+import { documentLinksRouter, workspaceLinksRouter } from './routes/links.routes.js';
+import { publicRouter } from './routes/public.routes.js';
 import { membersRouter } from './routes/members.routes.js';
 import { workspacesRouter } from './routes/workspaces.routes.js';
 
@@ -39,6 +41,9 @@ export function buildApp(): Express {
   app.use('/api/workspaces/:wid/invitations', workspaceInvitationsRouter);
   app.use('/api/workspaces/:wid/documents', documentsRouter);
   app.use('/api/workspaces/:wid/trash', trashRouter);
+  app.use('/api/workspaces/:wid/documents/:did/links', documentLinksRouter);
+  app.use('/api/workspaces/:wid/links', workspaceLinksRouter);
+  app.use('/api/s', publicRouter);
   app.use('/api/workspaces', workspacesRouter);
 
   // Any other /api/* path is a real 404 with the uniform error body, before

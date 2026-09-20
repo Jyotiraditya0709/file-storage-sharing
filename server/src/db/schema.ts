@@ -159,6 +159,10 @@ export const shareLinks = pgTable(
       .references(() => documents.id, { onDelete: 'cascade' }),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     tokenHash: bytea('token_hash').notNull().unique(),
+    // Last 6 characters of the token. SPEC §5 shows these for identification
+    // after creation, and they cannot be derived from a sha256. Six of ~43
+    // base64url characters leaves the token far beyond brute force.
+    tokenTail: text('token_tail').notNull(),
     passwordHash: text('password_hash'),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     maxDownloads: integer('max_downloads'),
