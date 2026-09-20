@@ -8,6 +8,7 @@ import { csrf } from './middleware/csrf.js';
 import { apiNotFound, errorHandler } from './middleware/errors.js';
 import { authRouter } from './routes/auth.routes.js';
 import { healthRouter } from './routes/health.routes.js';
+import { invitationsRouter, workspaceInvitationsRouter } from './routes/invitations.routes.js';
 import { membersRouter } from './routes/members.routes.js';
 import { workspacesRouter } from './routes/workspaces.routes.js';
 
@@ -32,7 +33,9 @@ export function buildApp(): Express {
 
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
+  app.use('/api/invitations', invitationsRouter);
   app.use('/api/workspaces/:wid/members', membersRouter);
+  app.use('/api/workspaces/:wid/invitations', workspaceInvitationsRouter);
   app.use('/api/workspaces', workspacesRouter);
 
   // Any other /api/* path is a real 404 with the uniform error body, before
