@@ -6,20 +6,31 @@ import { config } from './config.js';
 import { attachUser } from './middleware/auth.js';
 import { csrf } from './middleware/csrf.js';
 import { apiNotFound, errorHandler } from './middleware/errors.js';
-import { authRouter } from './routes/auth.routes.js';
+import { createLimiters } from './middleware/rateLimit.js';
+import { createAuthRouter } from './routes/auth.routes.js';
 import { documentsRouter, trashRouter } from './routes/documents.routes.js';
 import { healthRouter } from './routes/health.routes.js';
 import { invitationsRouter, workspaceInvitationsRouter } from './routes/invitations.routes.js';
 import { documentLinksRouter, workspaceLinksRouter } from './routes/links.routes.js';
-import { publicRouter } from './routes/public.routes.js';
+import { createPublicRouter } from './routes/public.routes.js';
 import { membersRouter } from './routes/members.routes.js';
 import { workspacesRouter } from './routes/workspaces.routes.js';
+
+export interface AppOverrides {
+  /**
+   * Attempts per window per IP on login, signup and unlock. Defaults to
+   * config.rateLimitMax; a test lowers it to drive the limiter to 429.
+   */
+  rateLimitMax?: number;
+}
 
 /**
  * Builds the Express app without binding a port, so tests can drive it with
  * supertest. server.ts is the only place that calls listen().
  */
-export function buildApp(): Express {
+export function buildApp(overrides: AppOverrides = {}): Express {
+  const limiters = createLimiters(overrides.rateLimitMax ?? config.rateLimitMax);
+
   const app = express();
   app.disable('x-powered-by');
 
@@ -35,7 +46,7 @@ export function buildApp(): Express {
   app.use(attachUser);
 
   app.use('/api/health', healthRouter);
-  app.use('/api/auth', authRouter);
+  app.use('/api/auth', createAuthRouter(limiters));
   app.use('/api/invitations', invitationsRouter);
   app.use('/api/workspaces/:wid/members', membersRouter);
   app.use('/api/workspaces/:wid/invitations', workspaceInvitationsRouter);
@@ -43,7 +54,7 @@ export function buildApp(): Express {
   app.use('/api/workspaces/:wid/trash', trashRouter);
   app.use('/api/workspaces/:wid/documents/:did/links', documentLinksRouter);
   app.use('/api/workspaces/:wid/links', workspaceLinksRouter);
-  app.use('/api/s', publicRouter);
+  app.use('/api/s', createPublicRouter(limiters));
   app.use('/api/workspaces', workspacesRouter);
 
   // Any other /api/* path is a real 404 with the uniform error body, before

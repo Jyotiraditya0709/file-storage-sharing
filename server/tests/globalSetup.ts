@@ -65,6 +65,10 @@ export async function setup() {
   process.env.S3_SECRET_KEY = 'testsecret';
   process.env.S3_FORCE_PATH_STYLE = 'true';
   process.env.MAX_UPLOAD_BYTES = String(1024 * 1024);
+  // The limiter still runs for every request in the suite; the ceiling is just
+  // lifted above what the suite generates from one address. rateLimit.test.ts
+  // builds its own app with a ceiling of 2 to prove the limiter actually bites.
+  process.env.RATE_LIMIT_MAX = String(100_000);
 }
 
 export async function teardown() {

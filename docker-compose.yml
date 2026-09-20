@@ -88,6 +88,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       APP_URL: ${APP_URL}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX}
     ports:
       - '3000:3000'
 

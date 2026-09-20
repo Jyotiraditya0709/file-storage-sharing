@@ -36,6 +36,8 @@ const envSchema = z
       .default('true')
       .transform((v) => v === 'true'),
 
+    RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+
     MAX_UPLOAD_BYTES: z.coerce
       .number()
       .int()
@@ -114,6 +116,8 @@ export const config = {
   },
 
   maxUploadBytes: env.MAX_UPLOAD_BYTES,
+  /** Attempts per 15 minutes per IP on login, signup and share-link unlock. */
+  rateLimitMax: env.RATE_LIMIT_MAX,
 } as const;
 
 export type Config = typeof config;
