@@ -7,7 +7,7 @@ Product decisions for every gap in the brief. The agent implements this; it does
 - Sign up with email + password. Email is unique, case-insensitive (`citext`). Password minimum 10 characters; hashed with argon2id.
 - Sessions are server-side rows in Postgres, referenced by an HttpOnly, `SameSite=Lax`, `Secure`-in-production cookie. Sliding expiry: 10 days, refreshed when more than half elapsed. Logout deletes the row.
 - No email verification, no password reset, no OAuth. Documented as left out.
-- CSRF: mutating requests must carry `Sec-Fetch-Site: same-origin` (or `none` for direct navigation); otherwise 403. Login and signup are rate-limited (10 attempts / 15 min / IP).
+- CSRF: Mutating requests must carry `Sec-Fetch-Site: same-origin` or `none`. A request with neither `Sec-Fetch-Site` nor `Origin` is treated as a non-browser client and allowed; any other value is 403 `CSRF_REJECTED`. Login and signup are rate-limited (10 attempts / 15 min / IP).
 
 ## 2. Workspaces and roles
 
