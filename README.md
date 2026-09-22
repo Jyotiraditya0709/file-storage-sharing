@@ -5,7 +5,7 @@ A small full-stack app for a team to keep documents in workspaces, invite collea
 ## Run it
 
 ```bash
-git clone <repo> && cd <repo>
+git clone https://github.com/Jyotiraditya0709/file-storage-sharing.git && cd file-storage-sharing
 cp .env.example .env          # works unedited; dev-only credentials, flagged in the file
 docker compose up --build     # postgres → minio → bucket init → migrations → app on http://localhost:3000
 ```
@@ -115,7 +115,7 @@ That last `UPDATE` is the whole exhaustion rule in one statement: ten concurrent
 - **Every download is proxied through the API; no presigned URLs reach the browser.** — In docker-compose a presigned URL is signed for minio:9000, which a browser can't reach, and you can't just rewrite the host because the signature covers it. Proxying also means every byte passes the permission check and link rules apply to the download itself. At real scale I'd presign member downloads with short TTLs and keep proxying share links.
 - **Server-side DB sessions instead of JWT.** — I need server state anyway to kick out a removed member, so a JWT would only add a revocation problem. The session code is about 150 lines and I can explain all of it.
 - **50 MB upload limit, MIME from magic bytes, filename sanitised to a display name only.** — 50 MB covers documents and caps memory and disk. The client's Content-Type is whatever the client says, so I ignore it and read the magic bytes. The filename is only ever displayed, never used in a path.
-- **Deliberately left out: folders, versioning, search, quotas, email delivery, virus scanning, 2FA, password reset.** — Folders, versioning, search, quotas, email delivery, virus scanning, 2FA, password reset. Each is its own subsystem, the brief said not to build a production system, and three flows that fully work beat seven that half work.
+- **Deliberately left out: folders, versioning, search, quotas, email delivery, virus scanning, 2FA, password reset.** — Each is its own subsystem, the brief said not to build a production system, and three flows that fully work beat seven that half work.
 
 ### Decisions taken during the build
 
@@ -208,7 +208,7 @@ Where it went wrong, and what caught it. The runtime Docker image did not copy `
 
 What I rejected: a role table mirrored in the browser, and four review findings listed above with reasons. In the S2 plan interview I rejected the agent's recommended no-op placeholder for the migrate service and had it run the real drizzle-kit command against an empty migrations folder, so the compose dependency chain was proven before any schema existed.
 
-**Candidates — corrections I made to the agent**
+**Corrections I made to the agent**
 
 | What happened | How it was caught |
 |---|---|
@@ -220,7 +220,7 @@ What I rejected: a role table mirrored in the browser, and four review findings 
 | Caught the rate limiter being skipped under `NODE_ENV=test` — configured but unverified. Required a real 429 test. | Reading the deviations list |
 | Required CSRF rejections to stop sharing the `FORBIDDEN` code with role denials. | Browser-test report |
 
-**Candidates — things the agent got wrong and the check that caught it**
+**Things the agent got wrong and the check that caught it**
 
 | What went wrong | Caught by |
 |---|---|
@@ -234,9 +234,9 @@ What I rejected: a role table mirrored in the browser, and four review findings 
 | `purge.service` was the only service querying the database directly, bypassing the repositories. | `code-reviewer` agent |
 | Transfer of ownership — the subtlest ordering in the codebase — had only a negative test. | `code-reviewer` agent |
 
-**Candidates — output I rejected**
+**Output I rejected**
 
-- Four review findings rejected with reasons (per-link brute-force counter, abort-on-limit restructure, `trust proxy`, absolute session lifetime) — 22:06, commit `1cfb3d7`.
+- Four review findings rejected with reasons (per-link brute-force counter, abort-on-limit restructure, `trust proxy`, absolute session lifetime) — commit `1cfb3d7`.
 - A subagent's report claimed the pagination test asserted "page 1 has 50"; it did not. The claim was checked rather than taken at face value.
 
 ## Weakest part
